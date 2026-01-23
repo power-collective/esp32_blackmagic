@@ -2,16 +2,19 @@ menu "Wi-Fi Configuration"
 
 config WIFI_SSID
     string "WiFi SSID"
-	default "myssid"
+	default "blackmagic"
 	help
-		SSID (network name) for the example to connect to.
+		In AP mode: SSID (network name) for the access point to create.
+		In STA mode: SSID (network name) to connect to.
 
 config WIFI_PASSWORD
     string "WiFi Password"
-	default "myssid"
+	default "blackmagic"
 	help
-		WiFi password (WPA or WPA2) for the example to use.
+		WiFi password (WPA2) - minimum 8 characters.
+		In AP mode: Password for clients to connect to this device.
+		In STA mode: Password for connecting to existing network.
 
-		Can be left blank if the network has no security set.
+		Leave blank for open network (AP mode only, not recommended).
 
 endmenu

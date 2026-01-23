@@ -82,7 +82,7 @@ unsigned short gdb_port = 2345;
    the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
 */
 
-#define AP_MODE 0
+#define AP_MODE 1
 
 //#ifndef AP_MODE
 //#define USE_DHCP 1
@@ -182,7 +182,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-//#ifndef AP_MODE
+#ifndef AP_MODE
 static void initialise_wifi(void)
 {
     wifi_event_group = xEventGroupCreate();
@@ -192,13 +192,7 @@ static void initialise_wifi(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
 
-//#ifdef USE_DHCP
     ESP_LOGI(TAG, "Getting IP addresses from DHCP");
-//#else
-//    ESP_LOGI(TAG, "Using hard-coded IP info");
-//    esp_netif_dhcpc_stop(netif);
-//    esp_netif_set_ip_info(netif, &ip_info);
-//#endif
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     cfg.nvs_enable = true;
@@ -240,55 +234,50 @@ static void initialise_wifi(void)
 
     ESP_LOGI(TAG, "wifi_init_sta finished.");
 }
-//#else
-//void wifi_init_softap(void)
-//{
-//
-//    wifi_event_group = xEventGroupCreate();
-//
-//    ESP_ERROR_CHECK(esp_netif_init());
-//    ESP_ERROR_CHECK(esp_event_loop_create_default());
-//    esp_netif_create_default_wifi_ap();
-//
-//    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-//    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-//
-//    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-//                                                        ESP_EVENT_ANY_ID,
-//                                                        &wifi_event_handler,
-//                                                        NULL,
-//                                                        NULL));
-//
-//    wifi_config_t wifi_config = {
-//        .ap = {
-//            .ssid = EXAMPLE_ESP_WIFI_SSID,
-//            .ssid_len = strlen(EXAMPLE_ESP_WIFI_SSID),
-//            .channel = EXAMPLE_ESP_WIFI_CHANNEL,
-//            .password = EXAMPLE_ESP_WIFI_PASS,
-//            .max_connection = EXAMPLE_MAX_STA_CONN,
-////#ifdef CONFIG_ESP_WIFI_SOFTAP_SAE_SUPPORT
-////            .authmode = WIFI_AUTH_WPA3_PSK,
-////            .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
-////#else /* CONFIG_ESP_WIFI_SOFTAP_SAE_SUPPORT */
-//            .authmode = WIFI_AUTH_WPA2_PSK,
-////#endif
-//            .pmf_cfg = {
-//                    .required = true,
-//            },
-//        },
-//    };
-//    if (strlen(EXAMPLE_ESP_WIFI_PASS) == 0) {
-//        wifi_config.ap.authmode = WIFI_AUTH_OPEN;
-//    }
-//
-//    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-//    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
-//    ESP_ERROR_CHECK(esp_wifi_start());
-//
-//    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s channel:%d",
-//             EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS, EXAMPLE_ESP_WIFI_CHANNEL);
-//}
-//#endif
+#else
+void wifi_init_softap(void)
+{
+    wifi_event_group = xEventGroupCreate();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_ap();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    cfg.nvs_enable = true;
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        NULL));
+
+    wifi_config_t wifi_config = {
+        .ap = {
+            .ssid = CONFIG_WIFI_SSID,
+            .ssid_len = strlen(CONFIG_WIFI_SSID),
+            .channel = 1,
+            .password = CONFIG_WIFI_PASSWORD,
+            .max_connection = 4,
+            .authmode = WIFI_AUTH_WPA2_PSK,
+            .pmf_cfg = {
+                .required = false,
+            },
+        },
+    };
+    if (strlen(CONFIG_WIFI_PASSWORD) == 0) {
+        wifi_config.ap.authmode = WIFI_AUTH_OPEN;
+    }
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s channel:%d",
+             CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD, 1);
+}
+#endif
 
 void old_gdb_application_thread(void *pvParameters)
 {
@@ -537,13 +526,13 @@ void app_main()
 
     ESP_ERROR_CHECK( ret );
 
-//#ifndef AP_MODE
-    ESP_LOGI(TAG, "Normal wifi mode");
+#ifndef AP_MODE
+    ESP_LOGI(TAG, "Station mode - connecting to existing WiFi");
     initialise_wifi();
-//#else
-    //ESP_LOGI(TAG, "Soft AP mode");
-    //wifi_init_softap();
-//#endif
+#else
+    ESP_LOGI(TAG, "Access Point mode - creating WiFi network");
+    wifi_init_softap();
+#endif
 
 	xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT,
 						false, true, portMAX_DELAY);

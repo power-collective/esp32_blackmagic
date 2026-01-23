@@ -213,7 +213,11 @@ static esp_err_t ws_handler(httpd_req_t *req)
                 // Send status response
                 char status[256];
                 esp_netif_ip_info_t ip_info;
-                esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+                // Try AP mode first, fall back to STA mode
+                esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+                if (!netif) {
+                    netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+                }
                 esp_netif_get_ip_info(netif, &ip_info);
 
                 snprintf(status, sizeof(status),
