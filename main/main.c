@@ -38,7 +38,7 @@
 #include "rtt.h"
 #endif
 
-#ifdef PLATFORM_HAS_UART_PASSTHROUGH
+#if PLATFORM_HAS_UART_PASSTHROUGH
 #include "uart_passthrough.h"
 #endif
 
@@ -681,7 +681,7 @@ void app_main()
 
 	platform_init();
 
-#ifdef PLATFORM_HAS_UART_PASSTHROUGH
+#if PLATFORM_HAS_UART_PASSTHROUGH
 	uart_passthrough_init();
 #endif
 
@@ -713,7 +713,7 @@ void app_main()
 
         }
     }
-#endif // !GDB_SERIAL_MODE
+    } // End WiFi mode
 
 #if 0
 	while (true) {

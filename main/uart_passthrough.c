@@ -5,7 +5,7 @@
 
 #include "platform.h"
 
-#ifdef PLATFORM_HAS_UART_PASSTHROUGH
+#if PLATFORM_HAS_UART_PASSTHROUGH
 
 #include "uart_passthrough.h"
 #include "web_server.h"
