@@ -55,38 +55,37 @@
 // D0=GPIO0, D1=GPIO1, D2=GPIO2, D3=GPIO21, D4=GPIO22, D5=GPIO23
 // D6=GPIO16, D7=GPIO17, D8=GPIO19, D9=GPIO20, D10=GPIO18
 
-#define TMS_PIN (2)   // D2 = GPIO2
-#define TDI_PIN (0)   // D0 = GPIO0
-#define TDO_PIN (21)  // D3 = GPIO21
-#define TCK_PIN (1)   // D1 = GPIO1
+#define TMS_PIN (21)  // GPIO21 (M5Stack Atom Lite)
+#define TDI_PIN (22)  // GPIO22 (M5Stack Atom Lite)
+#define TDO_PIN (19)  // GPIO19 (M5Stack Atom Lite)
+#define TCK_PIN (25)  // GPIO25 (M5Stack Atom Lite)
 #endif
 
-// Pins for XIAO ESP32-C6
-#define SWDIO_PIN  (2)   // D2 = GPIO2 (directly on header)
-#define SWCLK_PIN  (1)   // D1 = GPIO1 (directly on header)
+// Pins for M5Stack Atom Lite
+#define SWDIO_PIN  (21)  // GPIO21 (M5Stack Atom Lite)
+#define SWCLK_PIN  (25)  // GPIO25 (M5Stack Atom Lite)
 
 
 
 #define NRST_PORT 0
-#define NRST_PIN  (22)  // D4 = GPIO22
+#define NRST_PIN  (23)  // GPIO23 (M5Stack Atom Lite)
 
 
 // On the ESP32 we dont have the PORTS (unlike stm32), this is dummy value to keep things similar as other platforms
 #define SWCLK_PORT  0
 #define SWDIO_PORT  0
 
-/* XIAO ESP32-C6 pin mapping for JTAG/SWD:
- * D0 = GPIO0  -> TDI
- * D1 = GPIO1  -> TCK/SWCLK
- * D2 = GPIO2  -> TMS/SWDIO
- * D3 = GPIO21 -> TDO
- * D4 = GPIO22 -> NRST
- * D5 = GPIO23 -> TRACESWO (optional)
- * D6 = GPIO16 -> TARGET_UART_TX (connect to target's RX)
- * D7 = GPIO17 -> TARGET_UART_RX (connect to target's TX)
- * D8 = GPIO19 -> (free)
- * D9 = GPIO20 -> (free)
- * D10= GPIO18 -> TRACESWO_DUMMY_TX
+/* M5Stack Atom Lite pin mapping for JTAG/SWD:
+ * GPIO21 -> TMS/SWDIO
+ * GPIO25 -> TCK/SWCLK
+ * GPIO22 -> TDI
+ * GPIO19 -> TDO
+ * GPIO23 -> NRST
+ * GPIO33 -> TRACESWO (optional)
+ *
+ * Available pins on Atom Lite headers:
+ * Row 1: G21, G25
+ * Row 2: G22, G19, G23, G33
  */
 #define PLATFORM_IDENT "(ESP32C6)"
 #define PLATFORM_HAS_TRACESWO 1
@@ -96,7 +95,7 @@
 /* Enable platform-specific custom commands (uart_scan, uart_send) */
 #define PLATFORM_HAS_CUSTOM_COMMANDS 1
 
-#define TRACESWO_PIN 23       // D5 = GPIO23
+#define TRACESWO_PIN 33       // GPIO33 (M5Stack Atom Lite)
 // Workaround for driver
 #define TRACESWO_DUMMY_TX 18  // D10 = GPIO18
 
