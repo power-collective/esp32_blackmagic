@@ -434,8 +434,8 @@ CONFIG_PARTITION_TABLE_MD5=y
 #
 # Wi-Fi Configuration
 #
-CONFIG_WIFI_SSID="myssid"
-CONFIG_WIFI_PASSWORD="myssid"
+CONFIG_WIFI_SSID="blackmagic"
+CONFIG_WIFI_PASSWORD="blackmagic"
 # end of Wi-Fi Configuration
 
 #
