@@ -68,29 +68,12 @@ bool gdb_if_init_serial(void)
     return true;
 }
 
-void set_gdb_socket(int socket)
-{
-    // Not used in serial mode
-    (void)socket;
-}
-
-void set_gdb_listen(int socket)
-{
-    // Not used in serial mode
-    (void)socket;
-}
-
-bool gdb_if_is_connected(void)
+bool gdb_if_serial_is_connected(void)
 {
     return gdb_connected && uart_initialized;
 }
 
-int gdb_if_init(void)
-{
-    return gdb_if_init_serial() ? 0 : -1;
-}
-
-char gdb_if_getchar(void)
+char gdb_if_serial_getchar(void)
 {
     uint8_t c;
     int len;
@@ -114,7 +97,7 @@ char gdb_if_getchar(void)
     }
 }
 
-char gdb_if_getchar_to(uint32_t timeout)
+char gdb_if_serial_getchar_to(uint32_t timeout)
 {
     uint8_t c;
     int len;
@@ -134,7 +117,7 @@ char gdb_if_getchar_to(uint32_t timeout)
 static uint8_t buf[2048];
 static size_t bufsize = 0;
 
-void gdb_if_flush(const bool force)
+void gdb_if_serial_flush(const bool force)
 {
     if (!uart_initialized || bufsize == 0) {
         return;
@@ -149,7 +132,7 @@ void gdb_if_flush(const bool force)
     bufsize = 0;
 }
 
-void gdb_if_putchar(char c, bool flush)
+void gdb_if_serial_putchar(char c, bool flush)
 {
     if (!uart_initialized) {
         return;
@@ -157,6 +140,6 @@ void gdb_if_putchar(char c, bool flush)
 
     buf[bufsize++] = (uint8_t)c;
     if (flush || bufsize == sizeof(buf)) {
-        gdb_if_flush(true);
+        gdb_if_serial_flush(true);
     }
 }

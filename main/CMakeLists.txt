@@ -10,7 +10,9 @@ set(BM_TARGET ${BM_ROOT}/target)
 set(ESP32_PLATFORM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/platform.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/gdb_if.c
     ${CMAKE_CURRENT_SOURCE_DIR}/gdb_if_serial.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/gdb_if_wrapper.c
     ${CMAKE_CURRENT_SOURCE_DIR}/uart_passthrough.c
     ${CMAKE_CURRENT_SOURCE_DIR}/web_server.c
     ${CMAKE_CURRENT_SOURCE_DIR}/traceswo.c

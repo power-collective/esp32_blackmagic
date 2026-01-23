@@ -104,10 +104,12 @@
 // UART1 = Debug logs (GPIO26 TX, GPIO32 RX) - optional
 #define PLATFORM_HAS_UART_PASSTHROUGH 0
 
-// GDB Interface Mode Selection:
-// 0 = WiFi/TCP mode (GDB over network on port 2345)
-// 1 = Serial mode (GDB over UART0)
-#define GDB_SERIAL_MODE 0
+// GDB Interface Mode Selection - RUNTIME SWITCHABLE
+// Mode is selected at boot via button on GPIO39:
+// - Button NOT pressed → Serial mode (default)
+// - Button pressed (LOW) within 5s → WiFi mode
+#define MODE_SELECT_BUTTON_PIN 39
+#define MODE_SELECT_TIMEOUT_MS 5000
 
 // Enable this to redirect debug logs to UART1 on GPIO26/32
 // REQUIRED when GDB_SERIAL_MODE=1 to prevent log/GDB interference

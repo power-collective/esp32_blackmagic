@@ -514,25 +514,62 @@ CLEAN_UP:
 
 void main_task(void *parameters);
 
-#if GDB_SERIAL_MODE
-/* Serial GDB thread - no WiFi/sockets needed */
-extern bool gdb_if_init_serial(void);
+// External function to set GDB interface mode
+extern void gdb_if_set_mode(bool serial);
+extern bool gdb_if_get_mode(void);
 
+/* Detect mode selection button on GPIO39
+ * Returns: true for Serial mode, false for WiFi mode
+ */
+static bool detect_gdb_mode(void)
+{
+    // Configure GPIO39 as input with pull-up
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << MODE_SELECT_BUTTON_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+
+    ESP_LOGI(TAG, "Checking mode select button (GPIO%d)...", MODE_SELECT_BUTTON_PIN);
+    ESP_LOGI(TAG, "Press and hold button for WiFi mode, release for Serial mode");
+
+    // Check button state for timeout period
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout = pdMS_TO_TICKS(MODE_SELECT_TIMEOUT_MS);
+    bool button_pressed = false;
+
+    while ((xTaskGetTickCount() - start) < timeout) {
+        if (gpio_get_level(MODE_SELECT_BUTTON_PIN) == 0) {
+            // Button is pressed (active low)
+            button_pressed = true;
+            ESP_LOGI(TAG, "Button detected! WiFi mode selected");
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    if (!button_pressed) {
+        ESP_LOGI(TAG, "No button press - Serial mode selected (default)");
+    }
+
+    // Return: true=Serial, false=WiFi
+    return !button_pressed;
+}
+
+/* Serial GDB thread - no WiFi/sockets needed */
 static void gdb_serial_thread(void *pvParameters)
 {
     (void)pvParameters;
 
-    ESP_LOGI(TAG, "Starting GDB serial interface on UART0");
-
-    if (!gdb_if_init_serial()) {
-        ESP_LOGE(TAG, "Failed to initialize GDB serial interface");
-        vTaskDelete(NULL);
-        return;
-    }
+    ESP_LOGI(TAG, "Starting GDB serial interface on UART0 @ 115200 baud");
 
     platform_init();
 
-    ESP_LOGI(TAG, "GDB serial ready - connect with: arm-none-eabi-gdb -ex 'target remote /dev/ttyUSB0'");
+    ESP_LOGI(TAG, "GDB serial ready!");
+    ESP_LOGI(TAG, "Connect with: arm-none-eabi-gdb -ex 'target remote /dev/ttyUSB0'");
 
     // Main GDB loop - serial is always "connected"
     while (1) {
@@ -540,7 +577,6 @@ static void gdb_serial_thread(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(10)); // Brief delay before accepting next connection
     }
 }
-#endif
 
 #if USE_CUSTOM_DEBUG_UART
 /* Custom vprintf that writes to UART1 */
@@ -595,28 +631,35 @@ void app_main()
 
     ESP_ERROR_CHECK( ret );
 
-#if GDB_SERIAL_MODE
-    // Serial GDB mode - no WiFi needed
-    ESP_LOGI(TAG, "GDB Serial Mode - UART0 @ 115200 baud");
+    // Detect GDB mode via button on GPIO39
+    bool use_serial = detect_gdb_mode();
+    gdb_if_set_mode(use_serial);
+
+    if (use_serial) {
+        // Serial GDB mode - no WiFi needed
+        ESP_LOGI(TAG, "=== GDB SERIAL MODE ===");
+        ESP_LOGI(TAG, "UART0 @ 115200 baud");
 #if !USE_CUSTOM_DEBUG_UART
-    ESP_LOGW(TAG, "WARNING: Debug logs on same UART as GDB! Set USE_CUSTOM_DEBUG_UART=1");
+        ESP_LOGW(TAG, "WARNING: Debug logs on same UART as GDB!");
+        ESP_LOGW(TAG, "Consider setting USE_CUSTOM_DEBUG_UART=1");
 #endif
 
-    // Start serial GDB thread directly
-    xTaskCreate(&gdb_serial_thread, "gdb_serial", 4*4096, NULL, 17, NULL);
+        // Start serial GDB thread directly
+        xTaskCreate(&gdb_serial_thread, "gdb_serial", 4*4096, NULL, 17, NULL);
 
-    // Keep app_main running
-    while(1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-#else
-    // WiFi/TCP GDB mode
+        // Keep app_main running
+        while(1) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    } else {
+        // WiFi/TCP GDB mode
+        ESP_LOGI(TAG, "=== GDB WIFI MODE ===");
 #ifndef AP_MODE
-    ESP_LOGI(TAG, "Station mode - connecting to existing WiFi");
-    initialise_wifi();
+        ESP_LOGI(TAG, "Station mode - connecting to existing WiFi");
+        initialise_wifi();
 #else
-    ESP_LOGI(TAG, "Access Point mode - creating WiFi network");
-    wifi_init_softap();
+        ESP_LOGI(TAG, "Access Point mode - creating WiFi network");
+        wifi_init_softap();
 #endif
 
 	xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT,

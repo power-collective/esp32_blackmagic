@@ -59,13 +59,13 @@ void set_gdb_listen(int socket)
 	gdb_if_serv=socket;
 }
 
-bool gdb_if_is_connected(void)
+bool gdb_if_tcp_is_connected(void)
 {
 	return gdb_if_conn > 0;
 }
 
 
-int gdb_if_init(void)
+int gdb_if_tcp_init(void)
 {
 #ifdef WIN32
 	WSADATA wsaData;
@@ -92,7 +92,7 @@ int gdb_if_init(void)
 }
 
 
-char gdb_if_getchar(void)
+char gdb_if_tcp_getchar(void)
 {
 	char ret;
 	int i = 0;
@@ -126,7 +126,7 @@ char gdb_if_getchar(void)
 	return ret;
 }
 
-char gdb_if_getchar_to(uint32_t timeout)
+char gdb_if_tcp_getchar_to(uint32_t timeout)
 {
 	fd_set fds;
 	struct timeval tv;
@@ -141,7 +141,7 @@ char gdb_if_getchar_to(uint32_t timeout)
 	FD_SET(gdb_if_conn, &fds);
 
 	if (select(gdb_if_conn + 1, &fds, NULL, NULL, &tv) > 0)
-		return gdb_if_getchar();
+		return gdb_if_tcp_getchar();
 
 	return 0;
 }
@@ -149,7 +149,7 @@ char gdb_if_getchar_to(uint32_t timeout)
 static uint8_t buf[2048];
 static size_t bufsize = 0;
 
-void gdb_if_flush(const bool force)
+void gdb_if_tcp_flush(const bool force)
 {
 	if (gdb_if_conn <= 0 || bufsize == 0)
 		return;
@@ -160,12 +160,12 @@ void gdb_if_flush(const bool force)
 	bufsize = 0;
 }
 
-void gdb_if_putchar(char c, bool flush)
+void gdb_if_tcp_putchar(char c, bool flush)
 {
 	if (gdb_if_conn <= 0)
 		return;
 
 	buf[bufsize++] = (uint8_t)c;
 	if (flush || bufsize == sizeof(buf))
-		gdb_if_flush(true);
+		gdb_if_tcp_flush(true);
 }
