@@ -135,6 +135,8 @@ set(UPSTREAM_TARGET_CHIPS
     # Raspberry Pi
     ${BM_TARGET}/rp2040.c
     ${BM_TARGET}/rp2350.c
+    # Puya
+    ${BM_TARGET}/puya.c
 )
 
 # Combine all upstream target sources
