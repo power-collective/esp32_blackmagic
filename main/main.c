@@ -71,6 +71,8 @@
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 #include "lwip/dns.h"
+#include "driver/uart.h"
+#include <stdarg.h>
 
 unsigned short gdb_port = 2345;
 #include "platform.h"
@@ -512,11 +514,50 @@ CLEAN_UP:
 
 void main_task(void *parameters);
 
+#if USE_CUSTOM_DEBUG_UART
+/* Custom vprintf that writes to UART1 */
+static int uart_vprintf(const char *fmt, va_list args)
+{
+    char buf[256];
+    int len = vsnprintf(buf, sizeof(buf), fmt, args);
+    if (len > 0) {
+        uart_write_bytes(DEBUG_UART_PORT, buf, len);
+    }
+    return len;
+}
+
+/* Initialize UART1 for debug logs on GPIO26/32 */
+static void init_debug_uart(void)
+{
+    uart_config_t uart_config = {
+        .baud_rate = DEBUG_UART_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+
+    ESP_ERROR_CHECK(uart_param_config(DEBUG_UART_PORT, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(DEBUG_UART_PORT, DEBUG_UART_TX_PIN, DEBUG_UART_RX_PIN,
+                                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_driver_install(DEBUG_UART_PORT, 256, 256, 0, NULL, 0));
+
+    // Redirect stdout/stderr to UART1
+    esp_log_set_vprintf((vprintf_like_t)uart_vprintf);
+
+    ESP_LOGI(TAG, "Debug UART initialized on GPIO%d/GPIO%d @ %d baud",
+             DEBUG_UART_TX_PIN, DEBUG_UART_RX_PIN, DEBUG_UART_BAUD);
+}
+#endif
 
 void app_main()
 {
+#if USE_CUSTOM_DEBUG_UART
+    // Initialize debug UART first, before any logging
+    init_debug_uart();
+#endif
 
-    esp_err_t ret; 
+    esp_err_t ret;
     ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
        ESP_ERROR_CHECK(nvs_flash_erase());

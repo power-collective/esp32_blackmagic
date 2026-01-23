@@ -88,23 +88,32 @@
  * Row 2: G22, G19, G23, G33
  */
 #define PLATFORM_IDENT "(ESP32C6)"
-#define PLATFORM_HAS_TRACESWO 1
+#define PLATFORM_HAS_TRACESWO 0
 #define TRACESWO_PROTOCOL  2
 #define SWO_ENCODING 2  /* UART mode for upstream command.c */
 
 /* Enable platform-specific custom commands (uart_scan, uart_send) */
 #define PLATFORM_HAS_CUSTOM_COMMANDS 1
 
-#define TRACESWO_PIN 33       // GPIO33 (M5Stack Atom Lite)
+#define TRACESWO_PIN 33       // GPIO33 (M5Stack Atom Lite) - DISABLED
 // Workaround for driver
-#define TRACESWO_DUMMY_TX 18  // D10 = GPIO18
+#define TRACESWO_DUMMY_TX 18  // D10 = GPIO18 - DISABLED
 
-// UART passthrough pins (directly on header)
-#define PLATFORM_HAS_UART_PASSTHROUGH 1
-#define TARGET_UART_TX_PIN  16  // D6 = GPIO16 (connect to target's RX)
-#define TARGET_UART_RX_PIN  17  // D7 = GPIO17 (connect to target's TX)
-#define TARGET_UART_PORT    1   // Use UART1 (UART0 is for console)
-#define TARGET_UART_BAUD    115200
+// UART configuration:
+// UART0 = Console/GDB protocol (default USB serial)
+// UART1 = Debug logs (GPIO26 TX, GPIO32 RX) - optional
+#define PLATFORM_HAS_UART_PASSTHROUGH 0
+
+// Enable this to redirect debug logs to UART1 on GPIO26/32
+// This frees up UART0 for potential GDB serial protocol
+#define USE_CUSTOM_DEBUG_UART 0
+
+#if USE_CUSTOM_DEBUG_UART
+#define DEBUG_UART_TX_PIN  26  // GPIO26 for debug log output
+#define DEBUG_UART_RX_PIN  32  // GPIO32 for debug log input (optional)
+#define DEBUG_UART_PORT    1   // Use UART1 for debug logs
+#define DEBUG_UART_BAUD    115200
+#endif
 
 
 #define gpio_set_val(port, pin, value) do {	\
