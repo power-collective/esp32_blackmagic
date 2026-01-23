@@ -514,6 +514,34 @@ CLEAN_UP:
 
 void main_task(void *parameters);
 
+#if GDB_SERIAL_MODE
+/* Serial GDB thread - no WiFi/sockets needed */
+extern bool gdb_if_init_serial(void);
+
+static void gdb_serial_thread(void *pvParameters)
+{
+    (void)pvParameters;
+
+    ESP_LOGI(TAG, "Starting GDB serial interface on UART0");
+
+    if (!gdb_if_init_serial()) {
+        ESP_LOGE(TAG, "Failed to initialize GDB serial interface");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    platform_init();
+
+    ESP_LOGI(TAG, "GDB serial ready - connect with: arm-none-eabi-gdb -ex 'target remote /dev/ttyUSB0'");
+
+    // Main GDB loop - serial is always "connected"
+    while (1) {
+        main_loop();
+        vTaskDelay(pdMS_TO_TICKS(10)); // Brief delay before accepting next connection
+    }
+}
+#endif
+
 #if USE_CUSTOM_DEBUG_UART
 /* Custom vprintf that writes to UART1 */
 static int uart_vprintf(const char *fmt, va_list args)
@@ -567,6 +595,22 @@ void app_main()
 
     ESP_ERROR_CHECK( ret );
 
+#if GDB_SERIAL_MODE
+    // Serial GDB mode - no WiFi needed
+    ESP_LOGI(TAG, "GDB Serial Mode - UART0 @ 115200 baud");
+#if !USE_CUSTOM_DEBUG_UART
+    ESP_LOGW(TAG, "WARNING: Debug logs on same UART as GDB! Set USE_CUSTOM_DEBUG_UART=1");
+#endif
+
+    // Start serial GDB thread directly
+    xTaskCreate(&gdb_serial_thread, "gdb_serial", 4*4096, NULL, 17, NULL);
+
+    // Keep app_main running
+    while(1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+#else
+    // WiFi/TCP GDB mode
 #ifndef AP_MODE
     ESP_LOGI(TAG, "Station mode - connecting to existing WiFi");
     initialise_wifi();
@@ -602,9 +646,9 @@ void app_main()
 
     xTaskCreate(&gdb_application_thread, "gdb_thread", 4*4096, NULL, 17, NULL);
 
-
    //xTaskCreate(&main_task, "main_task", 4*4096, NULL, 17, NULL);
 
+    // WiFi watchdog - restart on failure
     for(;;) {
         	EventBits_t uxBits=xEventGroupWaitBits(wifi_event_group, WIFI_FAIL_BIT,
 						false, true, 20000);
@@ -626,6 +670,8 @@ void app_main()
 
         }
     }
+#endif // !GDB_SERIAL_MODE
+
 #if 0
 	while (true) {
 		volatile struct exception e;
