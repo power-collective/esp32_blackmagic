@@ -47,7 +47,12 @@ extern target_s *cur_target;
 //#define DEBUG_WARN(...)  PLATFORM_PRINTF(__VA_ARGS__)
 #define DEBUG(...)  printf(__VA_ARGS__)
 
+// Enable extensive GDB protocol debugging
+#define GDB_DEBUG_ENABLED 0
+
 static int gdb_if_serv, gdb_if_conn;
+static uint8_t buf[2048];
+static size_t bufsize = 0;
 
 void set_gdb_socket(int socket)
 {
@@ -62,6 +67,16 @@ void set_gdb_listen(int socket)
 bool gdb_if_tcp_is_connected(void)
 {
 	return gdb_if_conn > 0;
+}
+
+void gdb_if_tcp_clear_buffers(void)
+{
+#if GDB_DEBUG_ENABLED
+	if (bufsize > 0) {
+		printf("GDB_DEBUG: Clearing %zu bytes from stale buffer\n", bufsize);
+	}
+#endif
+	bufsize = 0;
 }
 
 
@@ -116,13 +131,20 @@ char gdb_if_tcp_getchar(void)
 		if(i <= 0) {
 			gdb_if_conn = -1;
 			DEBUG_INFO("Dropped broken connection\n");
-			// TODO!!! 
+			// TODO!!!
 			if (cur_target)
 				target_detach(cur_target);
 			/* Return '+' in case we were waiting for an ACK */
 			return '+';
 		}
 	}
+#if GDB_DEBUG_ENABLED
+	if (ret >= 32 && ret <= 126) {
+		printf("GDB_RX: '%c' (0x%02x)\n", ret, (unsigned char)ret);
+	} else {
+		printf("GDB_RX: 0x%02x\n", (unsigned char)ret);
+	}
+#endif
 	return ret;
 }
 
@@ -146,9 +168,6 @@ char gdb_if_tcp_getchar_to(uint32_t timeout)
 	return 0;
 }
 
-static uint8_t buf[2048];
-static size_t bufsize = 0;
-
 void gdb_if_tcp_flush(const bool force)
 {
 	if (gdb_if_conn <= 0 || bufsize == 0)
@@ -164,6 +183,14 @@ void gdb_if_tcp_putchar(char c, bool flush)
 {
 	if (gdb_if_conn <= 0)
 		return;
+
+#if GDB_DEBUG_ENABLED
+	if (c >= 32 && c <= 126) {
+		printf("GDB_TX: '%c' (0x%02x) %s\n", c, (unsigned char)c, flush ? "[FLUSH]" : "");
+	} else {
+		printf("GDB_TX: 0x%02x %s\n", (unsigned char)c, flush ? "[FLUSH]" : "");
+	}
+#endif
 
 	buf[bufsize++] = (uint8_t)c;
 	if (flush || bufsize == sizeof(buf))

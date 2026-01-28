@@ -131,6 +131,8 @@ static const char *TAG = "blackmagic";
 void set_gdb_socket(int socket);
 void set_gdb_listen(int socket);
 bool gdb_if_is_connected(void);
+bool gdb_if_get_mode(void);
+void gdb_if_tcp_clear_buffers(void);
 
 static int s_retry_num = 0;
 
@@ -423,7 +425,10 @@ static void main_loop(void)
 			break;
 		}
      }
-     ESP_LOGI(TAG, "GDB connection closed, waiting for new connection");
+     // Only log in TCP mode - serial mode shares UART0 with console
+     if (!gdb_if_get_mode()) {
+         ESP_LOGI(TAG, "GDB connection closed, waiting for new connection");
+     }
 }
 
 
@@ -500,6 +505,7 @@ static void gdb_application_thread(void *pvParameters)
         ESP_LOGI(TAG, "Socket accepted ip address: %s", addr_str);
         printf("accepted new gdb connection\n");
         set_gdb_socket(sock);
+        gdb_if_tcp_clear_buffers();  // Clear any stale data from previous connection
         main_loop();
 
         // Clean up after connection closed
@@ -516,7 +522,6 @@ void main_task(void *parameters);
 
 // External function to set GDB interface mode
 extern void gdb_if_set_mode(bool serial);
-extern bool gdb_if_get_mode(void);
 
 /* Detect mode selection button on GPIO39
  * Returns: true for Serial mode, false for WiFi mode
@@ -634,6 +639,18 @@ void app_main()
     // Detect GDB mode via button on GPIO39
     bool use_serial = detect_gdb_mode();
     gdb_if_set_mode(use_serial);
+
+    // Print SWD/JTAG pin configuration
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "SWD/JTAG Pin Configuration:");
+    ESP_LOGI(TAG, "  SWDIO (TMS) -> GPIO%d", SWDIO_PIN);
+    ESP_LOGI(TAG, "  SWCLK (TCK) -> GPIO%d", SWCLK_PIN);
+    ESP_LOGI(TAG, "  NRST        -> GPIO%d", NRST_PIN);
+    ESP_LOGI(TAG, "  TDI         -> GPIO%d", TDI_PIN);
+    ESP_LOGI(TAG, "  TDO         -> GPIO%d", TDO_PIN);
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "");
 
     if (use_serial) {
         // Serial GDB mode - no WiFi needed

@@ -14,6 +14,7 @@ extern char gdb_if_tcp_getchar(void);
 extern char gdb_if_tcp_getchar_to(uint32_t timeout);
 extern void gdb_if_tcp_flush(const bool force);
 extern void gdb_if_tcp_putchar(char c, bool flush);
+extern void gdb_if_tcp_clear_buffers(void);
 
 // External declarations for Serial mode (gdb_if_serial.c)
 extern bool gdb_if_serial_is_connected(void);

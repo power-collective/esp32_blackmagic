@@ -28,6 +28,8 @@
 #include "gdb_packet.h"
 #include "morse.h"
 #include "driver/gpio.h"
+#include "swd.h"
+#include "jtagtap.h"
 
 #include <assert.h>
 #include <sys/time.h>
@@ -49,30 +51,64 @@
 //  | (1<<TMS_PIN) | (1<<TDI_PIN) | (1<<TDO_PIN) | (1<<TCK_PIN)
 #define GPIO_OUTPUT_PIN_SEL  ((1<<SWCLK_PIN) | (1<<SWDIO_PIN))
 
-uint32_t target_clk_divider = 0;
+// SWD clock divider: 0=fastest, higher=slower
+// ESP32 @ 240MHz with divider=50 gives roughly 100-200kHz SWD clock
+// Start very conservatively - many targets need slower clocks for reliable detection
+// Can be increased later via "monitor freq" command once target is working
+uint32_t target_clk_divider = 50;
 
 void pins_init() {
+    printf("pins_init: Configuring GPIO pins...\n");
+    printf("  SWCLK_PIN = %d\n", SWCLK_PIN);
+    printf("  SWDIO_PIN = %d\n", SWDIO_PIN);
+    printf("  GPIO_OUTPUT_PIN_SEL = 0x%08lX\n", (unsigned long)GPIO_OUTPUT_PIN_SEL);
 
     gpio_config_t io_conf;
-    //disable interrupt
+
+    // Configure SWCLK as output with pull-up
     io_conf.intr_type = GPIO_INTR_DISABLE;
-    //set as output mode
     io_conf.mode = GPIO_MODE_OUTPUT;
-    //bit mask of the pins that you want to set,e.g.GPIO15/17
-    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
-    //disable pull-down mode
+    io_conf.pin_bit_mask = (1ULL << SWCLK_PIN);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    //disable pull-up mode
-    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-    //configure GPIO with the given settings
-    gpio_config(&io_conf);
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;  // Pull-up for stable idle state
+    esp_err_t err = gpio_config(&io_conf);
+    printf("pins_init: SWCLK gpio_config returned %d\n", err);
+    gpio_set_level(SWCLK_PIN, 0);  // Start with clock low
+
+    // Configure SWDIO as output initially (will be switched dynamically)
+    // with pull-up for stable idle state
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL << SWDIO_PIN);
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;  // Pull-up for SWD spec compliance
+    err = gpio_config(&io_conf);
+    printf("pins_init: SWDIO gpio_config returned %d\n", err);
+    gpio_set_level(SWDIO_PIN, 1);  // Start high (idle state)
+
+    // Configure NRST as open-drain output with pull-up
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT_OD;  // Open-drain for reset
+    io_conf.pin_bit_mask = (1ULL << NRST_PIN);
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    err = gpio_config(&io_conf);
+    printf("pins_init: NRST gpio_config returned %d\n", err);
+    gpio_set_level(NRST_PIN, 1);  // Release reset (high-Z with pull-up)
 }
 
 void platform_init()
 {
-
+	printf("platform_init: Starting platform initialization\n");
 	pins_init();
 
+	/* Initialize SWD and JTAG tap interfaces */
+	printf("platform_init: Initializing SWD interface\n");
+	swdptap_init();
+	printf("platform_init: Initializing JTAG interface\n");
+	jtagtap_init();
+
+	printf("platform_init: Platform initialization complete\n");
 }
 
 

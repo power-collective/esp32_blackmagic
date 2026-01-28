@@ -46,11 +46,96 @@ static bool cmd_uart_send(target_s *t, int argc, const char **argv)
 }
 
 /*
+ * swd_test command - Test SWD pin connectivity
+ * Toggles SWCLK and checks if SWDIO can be read back
+ */
+static bool cmd_swd_test(target_s *t, int argc, const char **argv)
+{
+	(void)t;
+	(void)argc;
+	(void)argv;
+
+	gdb_out("SWD Pin Test\n");
+	gdb_out("============\n");
+	gdb_outf("SWDIO Pin: GPIO%d\n", SWDIO_PIN);
+	gdb_outf("SWCLK Pin: GPIO%d\n", SWCLK_PIN);
+	gdb_outf("NRST Pin:  GPIO%d\n", NRST_PIN);
+	gdb_out("\n");
+
+	// Ensure pins are configured as outputs first
+	gdb_out("Configuring pins...\n");
+
+	esp_err_t err1 = gpio_set_direction(SWCLK_PIN, GPIO_MODE_OUTPUT);
+	esp_err_t err2 = gpio_set_direction(SWDIO_PIN, GPIO_MODE_OUTPUT);
+
+	if (err1 != ESP_OK) {
+		gdb_outf("ERROR: Failed to set SWCLK direction: %d\n", err1);
+	}
+	if (err2 != ESP_OK) {
+		gdb_outf("ERROR: Failed to set SWDIO direction: %d\n", err2);
+	}
+
+	platform_delay(10);
+	gdb_out("Pins configured\n\n");
+
+	// Test SWCLK output with a steady signal
+	gdb_out("Testing SWCLK (clock) output:\n");
+	gdb_out("Setting SWCLK HIGH for 3 seconds (measure with multimeter)...\n");
+
+	gpio_set_level(SWCLK_PIN, 1);
+	platform_delay(3000);
+
+	gdb_out("Setting SWCLK LOW for 3 seconds (measure with multimeter)...\n");
+	gpio_set_level(SWCLK_PIN, 0);
+	platform_delay(3000);
+
+	gdb_out("SWCLK test complete\n");
+	gdb_out("Expected: ~3.3V when HIGH, ~0V when LOW\n");
+	gdb_out("\n");
+
+	// Test SWDIO bidirectional
+	gdb_out("Testing SWDIO bidirectional:\n");
+
+	// Test output
+	gpio_set_direction(SWDIO_PIN, GPIO_MODE_OUTPUT);
+	platform_delay(1);
+
+	gpio_set_level(SWDIO_PIN, 1);
+	platform_delay(1);
+	int swdio_high = gpio_get_level(SWDIO_PIN);
+
+	gpio_set_level(SWDIO_PIN, 0);
+	platform_delay(1);
+	int swdio_low = gpio_get_level(SWDIO_PIN);
+
+	gdb_outf("  Output: HIGH=%d LOW=%d %s\n", swdio_high, swdio_low,
+	         (swdio_high && !swdio_low) ? "OK" : "FAIL");
+
+	// Test input (should float high with target's pull-up)
+	gpio_set_direction(SWDIO_PIN, GPIO_MODE_INPUT);
+	gpio_set_pull_mode(SWDIO_PIN, GPIO_FLOATING);
+	platform_delay(5);
+	int swdio_float = gpio_get_level(SWDIO_PIN);
+	gdb_outf("  Input (floating): %d %s\n", swdio_float,
+	         swdio_float ? "OK (pulled high)" : "LOW (check target power/connection)");
+
+	gdb_out("\n");
+	gdb_out("If all tests show OK, wiring is likely correct.\n");
+	gdb_out("If input shows LOW, check:\n");
+	gdb_out("  - Target is powered\n");
+	gdb_out("  - SWDIO is connected\n");
+	gdb_out("  - Target has pull-up on SWDIO\n");
+
+	return true;
+}
+
+/*
  * Platform-specific command list
  * This is referenced by upstream command.c when PLATFORM_HAS_CUSTOM_COMMANDS is defined
  */
 const command_s platform_cmd_list[] = {
 	{"uart_scan", cmd_uart_scan, "STM32 UART boot mode scan on TRACESWO pin"},
 	{"uart_send", cmd_uart_send, "Send bytes on TRACESWO_DUMMY_TX pin"},
+	{"swd_test", cmd_swd_test, "Test SWD pin connectivity and wiring"},
 	{NULL, NULL, NULL},
 };

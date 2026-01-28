@@ -39,6 +39,9 @@
 #define DEBUG(x, ...) do { ; } while (0)
 //#define DEBUG printf
 
+// Enable detailed SWD bit-level debugging
+//#define DEBUG_SWD_BITS 1
+
 #include "timing.h"
 #include "driver/gpio.h"
 #include <freertos/FreeRTOS.h>
@@ -126,7 +129,8 @@
 #define gpio_set_val(port, pin, value) do {	\
 		if (pin>38) printf("__FUNCTION__%d",pin);  \
 		gpio_set_level(pin, value);		\
-		/*sdk_os_delay_us(2);	*/	\
+		/* Small delay for GPIO settling - critical for reliable SWD */	\
+		__asm__ __volatile__("nop; nop; nop; nop;");	\
 	} while (0);
 
 #define gpio_set(port, pin) gpio_set_val(port, pin, 1)
