@@ -539,7 +539,7 @@ static bool detect_gdb_mode(void)
     gpio_config(&io_conf);
 
     ESP_LOGI(TAG, "Checking mode select button (GPIO%d)...", MODE_SELECT_BUTTON_PIN);
-    ESP_LOGI(TAG, "Press and hold button for WiFi mode, release for Serial mode");
+    ESP_LOGI(TAG, "Press button for Serial mode, wait for WiFi mode");
 
     // Check button state for timeout period
     TickType_t start = xTaskGetTickCount();
@@ -550,18 +550,18 @@ static bool detect_gdb_mode(void)
         if (gpio_get_level(MODE_SELECT_BUTTON_PIN) == 0) {
             // Button is pressed (active low)
             button_pressed = true;
-            ESP_LOGI(TAG, "Button detected! WiFi mode selected");
+            ESP_LOGI(TAG, "Button detected! Serial mode selected");
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
     if (!button_pressed) {
-        ESP_LOGI(TAG, "No button press - Serial mode selected (default)");
+        ESP_LOGI(TAG, "No button press - WiFi mode selected (default)");
     }
 
     // Return: true=Serial, false=WiFi
-    return !button_pressed;
+    return button_pressed;
 }
 
 /* Serial GDB thread - no WiFi/sockets needed */
