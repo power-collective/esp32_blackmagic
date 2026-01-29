@@ -52,10 +52,11 @@
 #define GPIO_OUTPUT_PIN_SEL  ((1<<SWCLK_PIN) | (1<<SWDIO_PIN))
 
 // SWD clock divider: 0=fastest, higher=slower
-// ESP32 @ 240MHz with divider=50 gives roughly 100-200kHz SWD clock
-// Start very conservatively - many targets need slower clocks for reliable detection
-// Can be increased later via "monitor freq" command once target is working
-uint32_t target_clk_divider = 50;
+// Empirically measured: divider=10 gives ~258kHz SWD clock
+// Formula: actual_freq ≈ 2,580,000 / divider
+// Start conservatively - many targets need slower clocks for reliable detection
+// Can be changed via "monitor frequency" command (e.g., "monitor frequency 1M")
+uint32_t target_clk_divider = 10;
 
 void pins_init() {
     printf("pins_init: Configuring GPIO pins...\n");
@@ -73,6 +74,9 @@ void pins_init() {
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;  // Pull-up for stable idle state
     esp_err_t err = gpio_config(&io_conf);
     printf("pins_init: SWCLK gpio_config returned %d\n", err);
+    // Set weak drive strength to reduce ringing (5mA)
+    gpio_set_drive_capability(SWCLK_PIN, GPIO_DRIVE_CAP_0);
+    printf("pins_init: SWCLK drive strength set to weak (5mA)\n");
     gpio_set_level(SWCLK_PIN, 0);  // Start with clock low
 
     // Configure SWDIO as output initially (will be switched dynamically)
@@ -84,6 +88,9 @@ void pins_init() {
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;  // Pull-up for SWD spec compliance
     err = gpio_config(&io_conf);
     printf("pins_init: SWDIO gpio_config returned %d\n", err);
+    // Set weak drive strength to reduce ringing (5mA)
+    gpio_set_drive_capability(SWDIO_PIN, GPIO_DRIVE_CAP_0);
+    printf("pins_init: SWDIO drive strength set to weak (5mA)\n");
     gpio_set_level(SWDIO_PIN, 1);  // Start high (idle state)
 
     // Configure NRST as open-drain output with pull-up
@@ -161,14 +168,40 @@ void platform_target_clk_output_enable(bool enable)
 
 void platform_max_frequency_set(const uint32_t frequency)
 {
+	if (frequency == 0) {
+		// Invalid frequency, ignore
+		return;
+	}
+
+	// Based on empirical measurement: divider=10 gives ~258kHz
+	// This means: actual_freq ≈ 2,580,000 / divider
+	// So: divider = 2,580,000 / desired_freq
+	const uint32_t calibration_constant = 2580000U;
+
+	uint32_t divider = calibration_constant / frequency;
+
+	// Clamp divider to reasonable range
+	// divider=0 is maximum speed (no delay loops)
+	// divider=1000 would be ~2.58kHz, which is probably too slow but allowed
+	if (divider > 1000U)
+		divider = 1000U;
+
+	target_clk_divider = divider;
 }
 
 uint32_t platform_max_frequency_get(void)
 {
-	uint32_t result = 0;
-	//uint32_t result = rcc_ahb_frequency;
-	//result /= USED_SWD_CYCLES + CYCLES_PER_CNT * target_clk_divider;
-	return result;
+	// Based on empirical measurement: divider=10 gives ~258kHz
+	// actual_freq ≈ 2,580,000 / divider
+	const uint32_t calibration_constant = 2580000U;
+
+	if (target_clk_divider == 0)
+		// Maximum speed - return a reasonable estimate
+		// With divider=0, no delay loops, limited only by GPIO speed
+		// Estimate ~500kHz-1MHz based on typical ESP32 GPIO toggling speed
+		return 500000U;
+
+	return calibration_constant / target_clk_divider;
 }
 
 
