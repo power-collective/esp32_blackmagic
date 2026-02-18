@@ -10,10 +10,15 @@
 #include "gdb_packet.h"
 #include "platform.h"
 #include "timing.h"
+#include "esp_system.h"
 
 /* External functions from other ESP32 modules */
 extern void scan_uart_boot_mode(void);
 extern void send_to_uart(int argc, const char **argv);
+extern void gdb_bmp_state_reset(void);
+extern void platform_request_bmp_reset(void);
+extern void platform_mode_save(bool use_serial);
+extern bool gdb_if_get_mode(void);
 
 /*
  * uart_scan command - Scan for STM32 in UART boot mode
@@ -130,6 +135,37 @@ static bool cmd_swd_test(target_s *t, int argc, const char **argv)
 }
 
 /*
+ * bmp_reset command - reset the BMP probe state machine without rebooting.
+ *
+ * Useful when the probe gets stuck in a weird state (e.g. target was
+ * disconnected mid-session, noackmode is stuck on, or cur_target is stale).
+ * After this command, use 'monitor swdp_scan' to re-enumerate targets.
+ *
+ * If the probe is currently stuck inside the target-running poll loop
+ * (i.e. this command can't be reached), send Ctrl+C from GDB.  The halt
+ * timeout will automatically fire after 5 s and perform the same reset.
+ */
+static bool cmd_bmp_reset(target_s *t, int argc, const char **argv)
+{
+	(void)t;
+	(void)argc;
+	(void)argv;
+	gdb_out("Resetting BMP probe state...\n");
+	/*
+	 * Signal the poll loop in case it is running (races are harmless here
+	 * because the flag is checked on every poll iteration).
+	 */
+	platform_request_bmp_reset();
+	/*
+	 * Also reset directly: if we are here then we are NOT inside the running
+	 * poll loop, so it is safe to call immediately.
+	 */
+	gdb_bmp_state_reset();
+	gdb_out("BMP reset complete. Use 'monitor swdp_scan' to re-scan targets.\n");
+	return true;
+}
+
+/*
  * Platform-specific command list
  * This is referenced by upstream command.c when PLATFORM_HAS_CUSTOM_COMMANDS is defined
  */
@@ -137,5 +173,6 @@ const command_s platform_cmd_list[] = {
 	{"uart_scan", cmd_uart_scan, "STM32 UART boot mode scan on TRACESWO pin"},
 	{"uart_send", cmd_uart_send, "Send bytes on TRACESWO_DUMMY_TX pin"},
 	{"swd_test", cmd_swd_test, "Test SWD pin connectivity and wiring"},
+	{"bmp_reset", cmd_bmp_reset, "Reset BMP probe state machine (no reboot)"},
 	{NULL, NULL, NULL},
 };

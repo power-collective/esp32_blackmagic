@@ -106,6 +106,25 @@ unsigned short gdb_port = 2345;
 /* This has to be aligned so the remote protocol can re-use it without causing Problems */
 static char pbuf[GDB_PACKET_BUFFER_SIZE + 1U] __attribute__((aligned(8)));
 
+/*
+ * How long (ms) to wait for a target to acknowledge a halt request before
+ * giving up and force-resetting the BMP state.  Five seconds is generous;
+ * a healthy Cortex-M responds within a handful of SWD clock cycles.
+ */
+#define TARGET_HALT_TIMEOUT_MS 5000U
+
+/*
+ * Set this from anywhere (ISR, timer, monitor command) to break out of
+ * the target-running poll loop and perform a clean state reset on the
+ * next poll iteration.
+ */
+volatile bool bmp_reset_requested = false;
+
+void platform_request_bmp_reset(void)
+{
+	bmp_reset_requested = true;
+}
+
 char *gdb_packet_buffer()
 {
 	return pbuf;
@@ -324,9 +343,22 @@ static void bmp_poll_loop(void)
 		return;
 
 	SET_IDLE_STATE(false);
+
+	bool halt_was_requested = false;
+	uint32_t halt_deadline_ms = 0;
+
 	while (gdb_target_running && cur_target) {
 		if (!gdb_if_is_connected())
 			return;
+
+		/* Honor an async reset request (from monitor command or future button ISR) */
+		if (bmp_reset_requested) {
+			bmp_reset_requested = false;
+			gdb_bmp_state_reset();
+			gdb_putpacketz("X1D");
+			return;
+		}
+
 		gdb_poll_target();
 
 		// Check again, as `gdb_poll_target()` may
@@ -334,8 +366,26 @@ static void bmp_poll_loop(void)
 		if (!gdb_target_running || !cur_target)
 			break;
 		char c = gdb_if_getchar_to(0);
-		if (c == '\x03' || c == '\x04')
+		if (c == '\x03' || c == '\x04') {
 			target_halt_request(cur_target);
+			/* Start the halt timeout on the first Ctrl+C */
+			if (!halt_was_requested) {
+				halt_was_requested = true;
+				halt_deadline_ms = platform_time_ms() + TARGET_HALT_TIMEOUT_MS;
+			}
+		}
+
+		/*
+		 * If the target was asked to halt but never responded within the
+		 * timeout, the SWD connection is likely dead.  Force a clean state
+		 * reset rather than spinning forever.
+		 */
+		if (halt_was_requested && platform_time_ms() > halt_deadline_ms) {
+			gdb_bmp_state_reset();
+			gdb_putpacketz("X1D");
+			return;
+		}
+
 		platform_pace_poll();
 #ifdef ENABLE_RTT
 		if (rtt_enabled)
