@@ -564,22 +564,41 @@ static bool detect_gdb_mode(void)
     return button_pressed;
 }
 
+/* Declared in gdb_if_wrapper.c */
+extern void gdb_if_wait_connect(void);
+
 /* Serial GDB thread - no WiFi/sockets needed */
 static void gdb_serial_thread(void *pvParameters)
 {
     (void)pvParameters;
 
-    ESP_LOGI(TAG, "Starting GDB serial interface on UART0 @ 115200 baud");
+    ESP_LOGI(TAG, "Starting GDB serial interface (USB CDC-ACM)");
 
     platform_init();
 
-    ESP_LOGI(TAG, "GDB serial ready!");
-    ESP_LOGI(TAG, "Connect with: arm-none-eabi-gdb -ex 'target remote /dev/ttyUSB0'");
+    ESP_LOGI(TAG, "GDB serial ready — waiting for host to open the port");
 
-    // Main GDB loop - serial is always "connected"
     while (1) {
+        /*
+         * Block here until the host opens the CDC-ACM port and sends the
+         * first byte.  This is the serial-mode equivalent of accept().
+         * Any stale bytes buffered from the previous session are drained
+         * inside gdb_if_wait_connect() before it returns.
+         */
+        gdb_if_wait_connect();
+
+        /*
+         * Reset all BMP probe state for the new session.  This clears
+         * cur_target, gdb_target_running, noackmode etc. so the new GDB
+         * client starts from a clean slate.
+         */
+        gdb_bmp_state_reset();
+
+        /* Run the GDB session until the host closes the port. */
         main_loop();
-        vTaskDelay(pdMS_TO_TICKS(10)); // Brief delay before accepting next connection
+
+        /* Brief yield before listening for the next connection. */
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 

@@ -723,6 +723,22 @@ void gdb_main(char *pbuf, size_t pbuf_size, size_t size)
 	gdb_main_loop(&gdb_controller, pbuf, pbuf_size, size, false);
 }
 
+/*
+ * Reset all BMP GDB-layer state without rebooting the ESP32.
+ * Use this to recover from stuck states where the probe has lost sync
+ * with the target or GDB client.  After calling this, the next GDB
+ * 'monitor swdp_scan' (or jtag_scan) will re-probe from scratch.
+ */
+void gdb_bmp_state_reset(void)
+{
+	target_list_free();
+	cur_target = NULL;
+	last_target = NULL;
+	gdb_target_running = false;
+	gdb_needs_detach_notify = false;
+	gdb_set_noackmode(false);
+}
+
 /* halt target */
 void gdb_halt_target(void)
 {

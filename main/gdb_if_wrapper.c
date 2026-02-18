@@ -23,6 +23,7 @@ extern char gdb_if_serial_getchar(void);
 extern char gdb_if_serial_getchar_to(uint32_t timeout);
 extern void gdb_if_serial_flush(const bool force);
 extern void gdb_if_serial_putchar(char c, bool flush);
+extern void gdb_if_serial_wait_connect(void);
 
 // Runtime mode selection
 static bool use_serial_mode = true; // Default to serial
@@ -90,4 +91,17 @@ void gdb_if_putchar(char c, bool flush)
     } else {
         gdb_if_tcp_putchar(c, flush);
     }
+}
+
+/*
+ * Block until the transport layer has an active connection.
+ * For serial: waits for the host to open the CDC-ACM port.
+ * For TCP: no-op (TCP accept() in gdb_application_thread already blocks).
+ */
+void gdb_if_wait_connect(void)
+{
+    if (use_serial_mode) {
+        gdb_if_serial_wait_connect();
+    }
+    /* TCP mode: connection is established by accept() before main_loop() */
 }
