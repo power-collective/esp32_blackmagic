@@ -166,6 +166,59 @@ static bool cmd_bmp_reset(target_s *t, int argc, const char **argv)
 }
 
 /*
+ * mode command - report the current GDB interface mode.
+ */
+static bool cmd_mode(target_s *t, int argc, const char **argv)
+{
+	(void)t;
+	(void)argc;
+	(void)argv;
+	bool serial = gdb_if_get_mode();
+	gdb_outf("Current mode: %s\n", serial ? "USB serial (CDC-ACM)" : "WiFi");
+	gdb_out("Use 'monitor use_usb' or 'monitor use_wifi' to switch permanently.\n");
+	return true;
+}
+
+/*
+ * use_wifi command - save WiFi as the boot mode and restart.
+ *
+ * The new mode takes effect after the restart.  Connect via TCP port 2345
+ * once the probe has joined the network (AP: blackmagic / blackmagic).
+ */
+static bool cmd_use_wifi(target_s *t, int argc, const char **argv)
+{
+	(void)t;
+	(void)argc;
+	(void)argv;
+	gdb_out("Saving WiFi mode and restarting...\n");
+	platform_mode_save(false);
+	/* Flush output so the message reaches the host before the reset. */
+	gdb_if_flush(true);
+	platform_delay(300);
+	esp_restart();
+	return true; /* unreachable */
+}
+
+/*
+ * use_usb command - save USB serial (CDC-ACM) as the boot mode and restart.
+ *
+ * The new mode takes effect after the restart.  Connect via the USB serial
+ * port that appears on the host after the probe re-enumerates.
+ */
+static bool cmd_use_usb(target_s *t, int argc, const char **argv)
+{
+	(void)t;
+	(void)argc;
+	(void)argv;
+	gdb_out("Saving USB serial mode and restarting...\n");
+	platform_mode_save(true);
+	gdb_if_flush(true);
+	platform_delay(300);
+	esp_restart();
+	return true; /* unreachable */
+}
+
+/*
  * Platform-specific command list
  * This is referenced by upstream command.c when PLATFORM_HAS_CUSTOM_COMMANDS is defined
  */
@@ -174,5 +227,8 @@ const command_s platform_cmd_list[] = {
 	{"uart_send", cmd_uart_send, "Send bytes on TRACESWO_DUMMY_TX pin"},
 	{"swd_test", cmd_swd_test, "Test SWD pin connectivity and wiring"},
 	{"bmp_reset", cmd_bmp_reset, "Reset BMP probe state machine (no reboot)"},
+	{"mode",      cmd_mode,      "Show current GDB interface mode (USB/WiFi)"},
+	{"use_wifi",  cmd_use_wifi,  "Switch to WiFi mode permanently and restart"},
+	{"use_usb",   cmd_use_usb,   "Switch to USB serial mode permanently and restart"},
 	{NULL, NULL, NULL},
 };

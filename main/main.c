@@ -65,6 +65,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "nvs.h"
 
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -573,45 +574,94 @@ void main_task(void *parameters);
 // External function to set GDB interface mode
 extern void gdb_if_set_mode(bool serial);
 
-/* Detect mode selection button on GPIO39
- * Returns: true for Serial mode, false for WiFi mode
+/* NVS namespace and key used to persist the GDB interface mode. */
+#define NVS_MODE_NAMESPACE "blackmagic"
+#define NVS_MODE_KEY       "gdb_mode"
+
+/*
+ * Load the previously saved mode from NVS.
+ * Returns the saved value, or `default_mode` if no entry exists yet.
+ * true = USB serial, false = WiFi.
+ */
+static bool mode_nvs_load(bool default_mode)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_MODE_NAMESPACE, NVS_READONLY, &h) != ESP_OK)
+        return default_mode;
+
+    uint8_t val = (uint8_t)default_mode;
+    nvs_get_u8(h, NVS_MODE_KEY, &val); /* silently keep default on miss */
+    nvs_close(h);
+    return (bool)val;
+}
+
+/*
+ * Persist the chosen mode to NVS so it survives reboots.
+ * Called by the monitor use_wifi / use_usb commands.
+ */
+void platform_mode_save(bool use_serial)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_MODE_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS for mode save");
+        return;
+    }
+    nvs_set_u8(h, NVS_MODE_KEY, (uint8_t)use_serial);
+    nvs_commit(h);
+    nvs_close(h);
+    ESP_LOGI(TAG, "Mode saved to NVS: %s", use_serial ? "USB serial" : "WiFi");
+}
+
+/*
+ * Determine the GDB interface mode at boot.
+ *
+ * Priority (highest to lowest):
+ *   1. Button held on GPIO39 → USB serial for this boot only (temporary
+ *      override, not saved to NVS — useful as an emergency escape hatch).
+ *   2. Mode saved in NVS from a previous 'monitor use_wifi/use_usb' call.
+ *   3. Default: WiFi (AP mode).
+ *
+ * Returns: true = USB serial, false = WiFi.
  */
 static bool detect_gdb_mode(void)
 {
-    // Configure GPIO39 as input with pull-up
+    /* Load the persistently saved mode (default: WiFi). */
+    bool saved_mode = mode_nvs_load(false /* default: WiFi */);
+
+    /* Configure the mode-select button as input with pull-up. */
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << MODE_SELECT_BUTTON_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
     };
     gpio_config(&io_conf);
 
-    ESP_LOGI(TAG, "Checking mode select button (GPIO%d)...", MODE_SELECT_BUTTON_PIN);
-    ESP_LOGI(TAG, "Press button for Serial mode, wait for WiFi mode");
+    ESP_LOGI(TAG, "Saved mode: %s  (hold GPIO%d button to override to USB serial)",
+             saved_mode ? "USB serial" : "WiFi", MODE_SELECT_BUTTON_PIN);
 
-    // Check button state for timeout period
-    TickType_t start = xTaskGetTickCount();
+    /* Poll the button for up to MODE_SELECT_TIMEOUT_MS. */
+    TickType_t start   = xTaskGetTickCount();
     TickType_t timeout = pdMS_TO_TICKS(MODE_SELECT_TIMEOUT_MS);
-    bool button_pressed = false;
+    bool button_held   = false;
 
     while ((xTaskGetTickCount() - start) < timeout) {
         if (gpio_get_level(MODE_SELECT_BUTTON_PIN) == 0) {
-            // Button is pressed (active low)
-            button_pressed = true;
-            ESP_LOGI(TAG, "Button detected! Serial mode selected");
+            button_held = true;
+            ESP_LOGI(TAG, "Button held — overriding to USB serial for this boot");
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    if (!button_pressed) {
-        ESP_LOGI(TAG, "No button press - WiFi mode selected (default)");
+    if (button_held) {
+        /* Temporary override: use serial this boot, do NOT save to NVS.
+         * To make serial the permanent default use 'monitor use_usb'. */
+        return true;
     }
 
-    // Return: true=Serial, false=WiFi
-    return button_pressed;
+    return saved_mode;
 }
 
 /* Declared in gdb_if_wrapper.c */
