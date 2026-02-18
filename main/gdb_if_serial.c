@@ -1,13 +1,13 @@
 /*
  * This file is part of the Black Magic Debug project.
  *
- * Serial UART implementation of GDB interface for ESP32
- * Uses UART0 for GDB protocol communication
+ * Serial USB Serial/JTAG implementation of GDB interface for ESP32-C3
+ * Uses USB Serial/JTAG Controller for GDB protocol communication
  */
 
 #include <stdio.h>
 #include <string.h>
-#include "driver/uart.h"
+#include "driver/usb_serial_jtag.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -19,58 +19,92 @@ extern target_s *cur_target;
 
 static const char *TAG = "gdb_serial";
 
-#define GDB_UART_NUM UART_NUM_0
-#define GDB_UART_BAUD 115200
-#define GDB_UART_BUF_SIZE 2048
+#define GDB_USB_BUF_SIZE 2048
 
-static bool uart_initialized = false;
+static bool usb_serial_initialized = false;
+/*
+ * gdb_connected tracks whether the host COM port is currently open and
+ * reading.  It starts false and is set true by gdb_if_serial_wait_connect().
+ * It is set false by gdb_if_serial_flush() when a TX write times out,
+ * which — per the CDC-ACM spec — is the only reliable signal that the
+ * host side port is closed.
+ */
 static bool gdb_connected = false;
 
-/* Initialize UART0 for GDB protocol */
+/* Initialize USB Serial/JTAG for GDB protocol */
 bool gdb_if_init_serial(void)
 {
-    if (uart_initialized) {
+    if (usb_serial_initialized) {
         return true;
     }
 
-    uart_config_t uart_config = {
-        .baud_rate = GDB_UART_BAUD,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    usb_serial_jtag_driver_config_t usb_serial_config = {
+        .rx_buffer_size = GDB_USB_BUF_SIZE,
+        .tx_buffer_size = GDB_USB_BUF_SIZE,
     };
 
-    esp_err_t ret = uart_param_config(GDB_UART_NUM, &uart_config);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure UART: %d", ret);
+    esp_err_t ret = usb_serial_jtag_driver_install(&usb_serial_config);
+
+    // ESP_ERR_INVALID_STATE means driver already installed (by console system) - that's OK!
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE(TAG, "Failed to install USB Serial/JTAG driver: %d", ret);
         return false;
     }
 
-    // Use default pins for UART0 (GPIO43/44 on ESP32-C6, varies by chip)
-    ret = uart_set_pin(GDB_UART_NUM, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
-                       UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set UART pins: %d", ret);
-        return false;
-    }
+    usb_serial_initialized = true;
+    /* gdb_connected intentionally left false — the host has not opened the
+     * COM port yet.  gdb_if_serial_wait_connect() will set it true once the
+     * first RX data arrives, proving the host is present and listening. */
 
-    ret = uart_driver_install(GDB_UART_NUM, GDB_UART_BUF_SIZE * 2, GDB_UART_BUF_SIZE * 2, 0, NULL, 0);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install UART driver: %d", ret);
-        return false;
-    }
+    ESP_LOGI(TAG, "GDB serial interface initialized on USB Serial/JTAG (driver state: %d)", ret);
 
-    uart_initialized = true;
-    gdb_connected = true; // Serial is always "connected"
-
-    ESP_LOGI(TAG, "GDB serial interface initialized on UART%d @ %d baud", GDB_UART_NUM, GDB_UART_BAUD);
     return true;
 }
 
 bool gdb_if_serial_is_connected(void)
 {
-    return gdb_connected && uart_initialized;
+    return gdb_connected && usb_serial_initialized;
+}
+
+/*
+ * Drain all bytes currently sitting in the USB Serial/JTAG RX ring buffer.
+ * Call this before starting a new GDB session to discard any stale bytes
+ * that were buffered during a previous (possibly incomplete) session.
+ */
+static void serial_drain_rx(void)
+{
+    uint8_t discard[64];
+    while (usb_serial_jtag_read_bytes(discard, sizeof(discard), 0) > 0)
+        ;
+}
+
+/*
+ * Block until the host opens the CDC-ACM port and sends the first byte,
+ * then drain any additional stale bytes that were buffered from a previous
+ * session.  Sets gdb_connected = true before returning.
+ *
+ * This is the serial-mode equivalent of accept() in TCP mode.  Call it
+ * once per session before entering main_loop().
+ *
+ * Note: the triggering byte and any bytes drained after it are discarded.
+ * GDB operates in ACK mode at session start (noackmode is reset by
+ * gdb_bmp_state_reset() before this is called), so it will retransmit
+ * qSupported automatically if it receives no ACK.
+ */
+void gdb_if_serial_wait_connect(void)
+{
+    uint8_t trigger;
+    ESP_LOGI(TAG, "Waiting for host to open CDC-ACM port...");
+
+    /* Block until at least one byte arrives — proof the host port is open. */
+    while (usb_serial_jtag_read_bytes(&trigger, 1, portMAX_DELAY) != 1)
+        ;
+
+    /* Drain anything else already buffered (stale data from previous session). */
+    serial_drain_rx();
+
+    gdb_connected = true;
+    ESP_LOGI(TAG, "Host connected, starting GDB session");
 }
 
 char gdb_if_serial_getchar(void)
@@ -78,22 +112,27 @@ char gdb_if_serial_getchar(void)
     uint8_t c;
     int len;
 
-    if (!uart_initialized) {
+    if (!usb_serial_initialized) {
         return '\x04'; // Return EOT if not initialized
     }
 
     // Block until we get a character
     while (1) {
-        len = uart_read_bytes(GDB_UART_NUM, &c, 1, portMAX_DELAY);
+        len = usb_serial_jtag_read_bytes(&c, 1, portMAX_DELAY);
         if (len == 1) {
             return (char)c;
         }
 
-        // If we somehow get here with an error, return ACK to keep protocol moving
+        /*
+         * len < 0 means a driver error (e.g. during a USB disruption).
+         * Return EOT so gdb_getpacket() exits cleanly rather than
+         * injecting a spurious '+' ACK that would confuse the protocol.
+         */
         if (len < 0) {
-            ESP_LOGW(TAG, "UART read error: %d", len);
-            return '+';
+            ESP_LOGW(TAG, "USB Serial/JTAG read error: %d", len);
+            return '\x04';
         }
+        /* len == 0: spurious wakeup, loop and try again */
     }
 }
 
@@ -102,11 +141,11 @@ char gdb_if_serial_getchar_to(uint32_t timeout)
     uint8_t c;
     int len;
 
-    if (!uart_initialized) {
+    if (!usb_serial_initialized) {
         return (char)-1;
     }
 
-    len = uart_read_bytes(GDB_UART_NUM, &c, 1, pdMS_TO_TICKS(timeout));
+    len = usb_serial_jtag_read_bytes(&c, 1, pdMS_TO_TICKS(timeout));
     if (len == 1) {
         return (char)c;
     }
@@ -119,7 +158,7 @@ static size_t bufsize = 0;
 
 void gdb_if_serial_flush(const bool force)
 {
-    if (!uart_initialized || bufsize == 0) {
+    if (!usb_serial_initialized || bufsize == 0) {
         return;
     }
 
@@ -127,14 +166,25 @@ void gdb_if_serial_flush(const bool force)
         return;
     }
 
-    uart_write_bytes(GDB_UART_NUM, (const char *)buf, bufsize);
-    uart_wait_tx_done(GDB_UART_NUM, pdMS_TO_TICKS(100));
+    int written = usb_serial_jtag_write_bytes((const char *)buf, bufsize, pdMS_TO_TICKS(100));
     bufsize = 0;
+
+    /*
+     * Per the CDC-ACM spec: when the host port is closed, the TX buffer
+     * never drains and writes time out.  A zero-byte write (nothing sent
+     * in 100 ms) is the only reliable signal that the port is closed.
+     * Signal disconnection so main_loop() exits and the session can be
+     * torn down cleanly.
+     */
+    if (written == 0) {
+        ESP_LOGW(TAG, "TX timeout: host port closed, signalling disconnect");
+        gdb_connected = false;
+    }
 }
 
 void gdb_if_serial_putchar(char c, bool flush)
 {
-    if (!uart_initialized) {
+    if (!usb_serial_initialized) {
         return;
     }
 
