@@ -50,7 +50,6 @@
 
 #define TMS_SET_MODE() do { } while (0)
 
-#if 1
 // No ports on the ESP32
 #define TDI_PORT  0
 
@@ -58,20 +57,35 @@
 // D0=GPIO0, D1=GPIO1, D2=GPIO2, D3=GPIO21, D4=GPIO22, D5=GPIO23
 // D6=GPIO16, D7=GPIO17, D8=GPIO19, D9=GPIO20, D10=GPIO18
 
-#define TMS_PIN (21)  // GPIO21 (M5Stack Atom Lite)
-#define TDI_PIN (22)  // GPIO22 (M5Stack Atom Lite)
-#define TDO_PIN (19)  // GPIO19 (M5Stack Atom Lite)
-#define TCK_PIN (25)  // GPIO25 (M5Stack Atom Lite)
+// Pin definitions - can be overridden via build flags in platformio.ini
+#ifndef TMS_PIN
+#define TMS_PIN (21)  // Default: GPIO21 (M5Stack Atom Lite)
 #endif
 
-// Pins for M5Stack Atom Lite
-#define SWDIO_PIN  (21)  // GPIO21 (M5Stack Atom Lite)
-#define SWCLK_PIN  (25)  // GPIO25 (M5Stack Atom Lite)
+#ifndef TDI_PIN
+#define TDI_PIN (22)  // Default: GPIO22 (M5Stack Atom Lite)
+#endif
 
+#ifndef TDO_PIN
+#define TDO_PIN (19)  // Default: GPIO19 (M5Stack Atom Lite)
+#endif
 
+#ifndef TCK_PIN
+#define TCK_PIN (25)  // Default: GPIO25 (M5Stack Atom Lite)
+#endif
+
+#ifndef SWDIO_PIN
+#define SWDIO_PIN (21)  // Default: GPIO21 (M5Stack Atom Lite)
+#endif
+
+#ifndef SWCLK_PIN
+#define SWCLK_PIN (25)  // Default: GPIO25 (M5Stack Atom Lite)
+#endif
 
 #define NRST_PORT 0
-#define NRST_PIN  (23)  // GPIO23 (M5Stack Atom Lite)
+#ifndef NRST_PIN
+#define NRST_PIN (23)  // Default: GPIO23 (M5Stack Atom Lite)
+#endif
 
 
 // On the ESP32 we dont have the PORTS (unlike stm32), this is dummy value to keep things similar as other platforms
@@ -98,9 +112,13 @@
 /* Enable platform-specific custom commands (uart_scan, uart_send) */
 #define PLATFORM_HAS_CUSTOM_COMMANDS 1
 
-#define TRACESWO_PIN 33       // GPIO33 (M5Stack Atom Lite) - DISABLED
-// Workaround for driver
-#define TRACESWO_DUMMY_TX 18  // D10 = GPIO18 - DISABLED
+#ifndef TRACESWO_PIN
+#define TRACESWO_PIN 33  // Default: GPIO33 (M5Stack Atom Lite) - DISABLED
+#endif
+
+#ifndef TRACESWO_DUMMY_TX
+#define TRACESWO_DUMMY_TX 18  // Default: D10 = GPIO18 - DISABLED
+#endif
 
 // UART configuration:
 // UART0 = Console/GDB protocol (default USB serial)
@@ -108,10 +126,12 @@
 #define PLATFORM_HAS_UART_PASSTHROUGH 0
 
 // GDB Interface Mode Selection - RUNTIME SWITCHABLE
-// Mode is selected at boot via button on GPIO39:
+// Mode is selected at boot via button:
 // - Button NOT pressed → Serial mode (default)
 // - Button pressed (LOW) within 5s → WiFi mode
-#define MODE_SELECT_BUTTON_PIN 39
+#ifndef MODE_SELECT_BUTTON_PIN
+#define MODE_SELECT_BUTTON_PIN 39  // Default: GPIO39
+#endif
 #define MODE_SELECT_TIMEOUT_MS 5000
 
 // Enable this to redirect debug logs to UART1 on GPIO26/32

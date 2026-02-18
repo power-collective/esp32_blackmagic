@@ -107,6 +107,11 @@ void pins_init() {
 void platform_init()
 {
 	printf("platform_init: Starting platform initialization\n");
+
+	/* Initialize GDB interface (serial or TCP) */
+	printf("platform_init: Initializing GDB interface\n");
+	gdb_if_init();
+
 	pins_init();
 
 	/* Initialize SWD and JTAG tap interfaces */
