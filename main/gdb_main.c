@@ -426,11 +426,26 @@ static void exec_q_supported(const char *packet, const size_t length)
 	(void)packet;
 	(void)length;
 
-	/* 
-	 * This is the first packet sent by GDB, so we can reset the NoAckMode flag here in case
-	 * the previous session was terminated abruptly with NoAckMode enabled
+	/*
+	 * qSupported is the first packet GDB sends on connecting, so it doubles as
+	 * our "new session started" signal.  In serial (USB CDC-ACM) mode there is
+	 * no host-visible port-close event on the ESP32-C3 USB-Serial-JTAG
+	 * peripheral (it exposes neither DTR/line-state nor a reliable TX-drain
+	 * signal), so a session that ends without a GDB 'D' detach (e.g. the user
+	 * quits gdb, or pyrsp's close() which never sends 'D') leaves main_loop()
+	 * parked in a blocking read with the target still attached/halted.  The
+	 * next GDB client's qSupported is what finally wakes that read, so this is
+	 * the one reliable point at which we can recover: force a full BMP state
+	 * reset here to detach any target left over from the previous session
+	 * before we answer the new one.  This is what removes the old
+	 * unplug/replug-between-sessions requirement.
+	 *
+	 * On a clean first session this is a harmless no-op (state was already
+	 * reset before main_loop()); gdb_bmp_state_reset() also clears NoAckMode,
+	 * covering the abrupt-NoAckMode-termination case that used to be handled
+	 * by the bare gdb_set_noackmode(false) call here.
 	 */
-	gdb_set_noackmode(false);
+	gdb_bmp_state_reset();
 
 	gdb_putpacket_f(
 		"PacketSize=%X;qXfer:memory-map:read+;qXfer:features:read+" GDB_QSUPPORTED_NOACKMODE, GDB_MAX_PACKET_SIZE);

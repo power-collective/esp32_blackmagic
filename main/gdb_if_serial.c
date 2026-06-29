@@ -116,7 +116,22 @@ char gdb_if_serial_getchar(void)
         return '\x04'; // Return EOT if not initialized
     }
 
-    // Block until we get a character
+    /*
+     * Block until we get a character.
+     *
+     * On the ESP32-C3 USB-Serial-JTAG peripheral there is no host-visible
+     * signal for "the GDB client closed the CDC-ACM port" (no DTR/line-state
+     * callback, and TX-drain is unreliable — see gdb_if_serial_flush).  A
+     * session that ends without a GDB 'D' detach therefore leaves us parked
+     * here indefinitely, which is fine: nothing needs this thread until a
+     * client has something to say.  Recovery happens when the *next* GDB
+     * client connects — its first bytes (the qSupported handshake) wake this
+     * read, and exec_q_supported() then force-detaches any target left over
+     * from the abandoned session.  So we do NOT try to synthesise a disconnect
+     * from USB SOF state here (usb_serial_jtag_is_connected() only reflects
+     * physical cable presence, not port-open, so it would never fire on a
+     * plain gdb quit anyway).
+     */
     while (1) {
         len = usb_serial_jtag_read_bytes(&c, 1, portMAX_DELAY);
         if (len == 1) {
