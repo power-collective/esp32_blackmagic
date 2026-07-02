@@ -28,6 +28,19 @@ extern void gdb_if_serial_wait_connect(void);
 // Runtime mode selection
 static bool use_serial_mode = true; // Default to serial
 
+/*
+ * Single-character pushback slot, shared across transports.
+ * bmp_poll_loop() uses gdb_if_ungetchar() to "unget" a GDB packet-start byte
+ * ('$') it peeked while the target was running, so the following
+ * gdb_getpacket() sees the packet intact.  -1 means "empty".
+ */
+static int pushback_char = -1;
+
+void gdb_if_ungetchar(char c)
+{
+    pushback_char = (uint8_t)c;
+}
+
 void gdb_if_set_mode(bool serial)
 {
     use_serial_mode = serial;
@@ -59,6 +72,11 @@ int gdb_if_init(void)
 
 char gdb_if_getchar(void)
 {
+    if (pushback_char >= 0) {
+        char pb = (char)pushback_char;
+        pushback_char = -1;
+        return pb;
+    }
     if (use_serial_mode) {
         return gdb_if_serial_getchar();
     } else {
@@ -68,6 +86,11 @@ char gdb_if_getchar(void)
 
 char gdb_if_getchar_to(uint32_t timeout)
 {
+    if (pushback_char >= 0) {
+        char pb = (char)pushback_char;
+        pushback_char = -1;
+        return pb;
+    }
     if (use_serial_mode) {
         return gdb_if_serial_getchar_to(timeout);
     } else {

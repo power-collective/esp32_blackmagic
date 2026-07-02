@@ -153,6 +153,7 @@ void set_gdb_listen(int socket);
 bool gdb_if_is_connected(void);
 bool gdb_if_get_mode(void);
 void gdb_if_tcp_clear_buffers(void);
+void gdb_if_ungetchar(char c);
 
 static int s_retry_num = 0;
 
@@ -374,6 +375,35 @@ static void bmp_poll_loop(void)
 				halt_was_requested = true;
 				halt_deadline_ms = platform_time_ms() + TARGET_HALT_TIMEOUT_MS;
 			}
+		} else if (c == '$') {
+			/*
+			 * A new GDB packet is starting while the target is running.  This
+			 * is how a *reconnecting* client announces itself: the previous
+			 * session ended without a 'D' detach (the target was left running,
+			 * e.g. pyrsp's close() resumes then closes the port), so we are
+			 * still polling its target when the next client's first packet
+			 * ('$qSupported') arrives.  Without handling it here the '$' and
+			 * the rest of the packet get consumed and discarded one byte per
+			 * loop iteration and the new session never gets served — the exact
+			 * cause of the old "unplug/replug between sessions" symptom.
+			 *
+			 * Tear the old session down cleanly *here* rather than limping on:
+			 *  - halt the target so SWD stops churning,
+			 *  - gdb_bmp_state_reset() detaches the stale target, clears
+			 *    gdb_target_running, and resets ACK mode — so no leftover stop
+			 *    reply is pending and the packet layer starts from a clean
+			 *    slate (a half-reset state was the source of the response
+			 *    desync where the new client's Hg0 got the qSupported reply),
+			 *  - push the '$' back so the new packet stays intact (the rest of
+			 *    the packet, 'qSupported#37', is still queued in RX behind it —
+			 *    do NOT drain RX here or we would eat the new packet body).
+			 * gdb_getpacket() then reads the full '$qSupported...' fresh and
+			 * exec_q_supported() serves the new session.
+			 */
+			target_halt_request(cur_target);
+			gdb_bmp_state_reset();
+			gdb_if_ungetchar('$');
+			break;
 		}
 
 		/*

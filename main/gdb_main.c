@@ -87,6 +87,18 @@ target_s *last_target;
 bool gdb_target_running = false;
 static bool gdb_needs_detach_notify = false;
 
+/*
+ * Set while gdb_bmp_state_reset() tears down a stale session, so the target
+ * destroy callback does NOT emit its "%Stop" notification and "You are now
+ * detached" text.  During a self-heal reset there is no established GDB client
+ * that wants those packets — emitting them just leaves stray $O/notification
+ * bytes in the TX pipe that corrupt the *next* session's handshake (observed
+ * on hardware: a reconnecting client's "?" probe read the leftover detach
+ * text instead of a stop reply).  They remain enabled for a normal in-session
+ * detach, where an interactive GDB does want the notice.
+ */
+static bool gdb_suppress_detach_notify = false;
+
 static void handle_q_packet(char *packet, size_t len);
 static void handle_v_packet(char *packet, size_t len);
 static void handle_z_packet(char *packet, size_t len);
@@ -96,10 +108,12 @@ static void gdb_target_destroy_callback(target_controller_s *tc, target_s *t)
 {
 	(void)tc;
 	if (cur_target == t) {
-		gdb_put_notificationz("%Stop:W00");
-		gdb_out("You are now detached from the previous target.\n");
+		if (!gdb_suppress_detach_notify) {
+			gdb_put_notificationz("%Stop:W00");
+			gdb_out("You are now detached from the previous target.\n");
+			gdb_needs_detach_notify = true;
+		}
 		cur_target = NULL;
-		gdb_needs_detach_notify = true;
 	}
 
 	if (last_target == t)
@@ -746,7 +760,15 @@ void gdb_main(char *pbuf, size_t pbuf_size, size_t size)
  */
 void gdb_bmp_state_reset(void)
 {
+	/*
+	 * Suppress the destroy callback's "%Stop"/"detached" packets while we free
+	 * targets here: this is a session teardown, not an interactive detach, so
+	 * there is no client that wants them and emitting them corrupts the next
+	 * session's handshake (see gdb_suppress_detach_notify).
+	 */
+	gdb_suppress_detach_notify = true;
 	target_list_free();
+	gdb_suppress_detach_notify = false;
 	cur_target = NULL;
 	last_target = NULL;
 	gdb_target_running = false;
