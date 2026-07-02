@@ -13,6 +13,7 @@ set(ESP32_PLATFORM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/gdb_if.c
     ${CMAKE_CURRENT_SOURCE_DIR}/gdb_if_serial.c
     ${CMAKE_CURRENT_SOURCE_DIR}/gdb_if_wrapper.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/log_capture.c
     ${CMAKE_CURRENT_SOURCE_DIR}/uart_passthrough.c
     ${CMAKE_CURRENT_SOURCE_DIR}/web_server.c
     ${CMAKE_CURRENT_SOURCE_DIR}/traceswo.c

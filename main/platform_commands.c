@@ -5,12 +5,15 @@
  * that extend the upstream command.c functionality.
  */
 
+#include <string.h>
+
 #include "general.h"
 #include "target_internal.h"
 #include "gdb_packet.h"
 #include "platform.h"
 #include "timing.h"
 #include "esp_system.h"
+#include "log_capture.h"
 
 /* External functions from other ESP32 modules */
 extern void scan_uart_boot_mode(void);
@@ -219,6 +222,53 @@ static bool cmd_use_usb(target_s *t, int argc, const char **argv)
 }
 
 /*
+ * get_logs command - dump captured ESP-IDF logs to the GDB console.
+ *
+ * In serial (USB CDC-ACM) mode the firmware's logs are captured into a RAM
+ * ring buffer instead of being streamed raw onto the shared port (which would
+ * corrupt the GDB packet stream).  This command retrieves that history as
+ * proper GDB console output ($O packets), so `monitor get_logs` shows the same
+ * diagnostics you'd normally see over the WiFi/console UART.
+ *
+ * Usage:
+ *   monitor get_logs         - print captured logs
+ *   monitor get_logs clear   - print captured logs, then clear the buffer
+ */
+static bool cmd_get_logs(target_s *t, int argc, const char **argv)
+{
+	(void)t;
+
+	const size_t total = log_capture_size();
+	if (total == 0) {
+		gdb_out("(no logs captured)\n");
+		return true;
+	}
+
+	/*
+	 * Stream the ring buffer to the host in bounded, NUL-terminated chunks via
+	 * gdb_out() (which packetises each as a $O console-output packet).
+	 * log_capture_read() takes an advancing offset, so this walks the whole
+	 * history oldest-first.
+	 */
+	char chunk[257];
+	size_t off = 0;
+	for (;;) {
+		size_t n = log_capture_read(off, chunk, sizeof(chunk) - 1);
+		if (n == 0)
+			break;
+		chunk[n] = '\0';
+		gdb_out(chunk);
+		off += n;
+	}
+
+	if (argc >= 2 && strcmp(argv[1], "clear") == 0) {
+		log_capture_clear();
+		gdb_out("\n(log buffer cleared)\n");
+	}
+	return true;
+}
+
+/*
  * Platform-specific command list
  * This is referenced by upstream command.c when PLATFORM_HAS_CUSTOM_COMMANDS is defined
  */
@@ -227,6 +277,7 @@ const command_s platform_cmd_list[] = {
 	{"uart_send", cmd_uart_send, "Send bytes on TRACESWO_DUMMY_TX pin"},
 	{"swd_test", cmd_swd_test, "Test SWD pin connectivity and wiring"},
 	{"bmp_reset", cmd_bmp_reset, "Reset BMP probe state machine (no reboot)"},
+	{"get_logs",  cmd_get_logs,  "Dump captured firmware logs ('clear' to also empty)"},
 	{"mode",      cmd_mode,      "Show current GDB interface mode (USB/WiFi)"},
 	{"use_wifi",  cmd_use_wifi,  "Switch to WiFi mode permanently and restart"},
 	{"use_usb",   cmd_use_usb,   "Switch to USB serial mode permanently and restart"},

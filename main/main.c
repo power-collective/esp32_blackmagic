@@ -30,6 +30,7 @@
 #include "exception.h"
 #include "gdb_packet.h"
 #include "morse.h"
+#include "log_capture.h"
 #include "libopencm3/cm3/common.h"
 
 
@@ -788,6 +789,20 @@ void app_main()
     // Detect GDB mode via button on GPIO39
     bool use_serial = detect_gdb_mode();
     gdb_if_set_mode(use_serial);
+
+    /*
+     * Start capturing ESP-IDF logs into a RAM ring buffer, retrievable with
+     * "monitor get_logs".  In serial GDB mode the console shares the
+     * USB-Serial-JTAG port with the GDB stream, so DON'T also stream (raw log
+     * bytes would corrupt GDB packets) — capture only.  In WiFi mode the
+     * console is separate, so keep streaming it as before.  When a dedicated
+     * debug UART is configured, streaming is always safe.
+     */
+#if USE_CUSTOM_DEBUG_UART
+    log_capture_init(true /* also stream to the dedicated debug UART */);
+#else
+    log_capture_init(!use_serial /* stream only when console isn't shared with GDB */);
+#endif
 
     // Print SWD/JTAG pin configuration
     ESP_LOGI(TAG, "");
